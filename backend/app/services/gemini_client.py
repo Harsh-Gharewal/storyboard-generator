@@ -178,6 +178,31 @@ async def text_generate(
     return await call_text_model(payload)
 
 
+def map_text_model_to_image_model(text_model: Optional[str]) -> str:
+    """Map a given text model name (like gemini-3.5-flash) to a valid image generation model.
+
+    If the model string is None or empty, falls back to the configured GEMINI_IMAGE_MODEL.
+    """
+    if not text_model:
+        return settings.GEMINI_IMAGE_MODEL
+
+    mo_clean = text_model.lower().strip()
+
+    # Map specific text models to their matching available image models
+    if "3.6-flash" in mo_clean or "3.5-flash" in mo_clean or "3.1-flash" in mo_clean:
+        return "gemini-3.1-flash-image"
+    elif "2.5-flash" in mo_clean:
+        return "gemini-2.5-flash-image"
+    elif "3.1-pro" in mo_clean or "3-pro" in mo_clean:
+        return "gemini-3-pro-image"
+    elif "pro" in mo_clean:
+        return "gemini-3-pro-image"
+    elif not mo_clean.endswith("-image"):
+        return f"{mo_clean}-image"
+    else:
+        return mo_clean
+
+
 # ── Image generation (gemini-3.1-flash-image) ────────────────────────
 
 @retry(
@@ -233,14 +258,8 @@ async def call_image_model(
         from beanie import PydanticObjectId
         try:
             script = await Script.get(PydanticObjectId(str(script_id)))
-            if script and script.model:
-                mo_clean = script.model.lower().strip()
-                if "pro" in mo_clean:
-                    primary_image_model = mo_clean.replace("-pro", "-pro-image")
-                elif not mo_clean.endswith("-image"):
-                    primary_image_model = f"{mo_clean}-image"
-                else:
-                    primary_image_model = mo_clean
+            if script:
+                primary_image_model = map_text_model_to_image_model(script.model)
         except Exception as e:
             logger.warning("Could not load Script %s to get model in call_image_model: %s", script_id, e)
 

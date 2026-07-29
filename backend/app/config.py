@@ -12,7 +12,7 @@ class Settings(BaseSettings):
 
     # Gemini model identifiers
     GEMINI_TEXT_MODEL: str = "gemini-3.5-flash"
-    GEMINI_IMAGE_MODEL: str = "gemini-3.5-flash-image"
+    GEMINI_IMAGE_MODEL: str = "gemini-3.1-flash-image"
 
     # Image processing
     IMAGE_MAX_LONG_EDGE: int = 512

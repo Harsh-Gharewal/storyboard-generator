@@ -196,8 +196,9 @@ async def get_or_create_explicit_cache(
 
     # Exceeds threshold -> create explicit cache via Gemini API
     try:
+        target_model = gemini_client.map_text_model_to_image_model(script.model)
         cache_name = await gemini_client.create_cache(
-            model=settings.GEMINI_IMAGE_MODEL,
+            model=target_model,
             contents=[cacheable_text],
             display_name=f"script_cache_{script_id}",
             ttl_seconds=settings.CACHE_TTL_SECONDS,

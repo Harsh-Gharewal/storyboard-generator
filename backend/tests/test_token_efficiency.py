@@ -181,3 +181,21 @@ async def test_gemini_client_retry_on_429():
             script_id="test_script",
             call_type="text_generate",
         )
+
+
+def test_map_text_model_to_image_model():
+    """Verify that text models map correctly to available image generation models."""
+    from app.services.gemini_client import map_text_model_to_image_model
+
+    # Mapping checks
+    assert map_text_model_to_image_model("gemini-3.5-flash") == "gemini-3.1-flash-image"
+    assert map_text_model_to_image_model("gemini-3.6-flash") == "gemini-3.1-flash-image"
+    assert map_text_model_to_image_model("gemini-2.5-flash") == "gemini-2.5-flash-image"
+    assert map_text_model_to_image_model("gemini-3.1-pro") == "gemini-3-pro-image"
+    assert map_text_model_to_image_model(None) == "gemini-3.1-flash-image"
+    assert map_text_model_to_image_model("") == "gemini-3.1-flash-image"
+
+    # Fallbacks / custom handling
+    assert map_text_model_to_image_model("custom-model-image") == "custom-model-image"
+    assert map_text_model_to_image_model("custom-model") == "custom-model-image"
+
