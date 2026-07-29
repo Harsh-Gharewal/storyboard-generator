@@ -197,6 +197,10 @@ async def get_or_create_explicit_cache(
     # Exceeds threshold -> create explicit cache via Gemini API
     try:
         target_model = gemini_client.map_text_model_to_image_model(script.model)
+        if target_model.startswith("gpt"):
+            logger.info("Script uses OpenAI model %s; bypassing explicit context caching", target_model)
+            return None
+
         cache_name = await gemini_client.create_cache(
             model=target_model,
             contents=[cacheable_text],

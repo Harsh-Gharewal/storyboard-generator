@@ -199,3 +199,53 @@ def test_map_text_model_to_image_model():
     assert map_text_model_to_image_model("custom-model-image") == "custom-model-image"
     assert map_text_model_to_image_model("custom-model") == "custom-model-image"
 
+    # OpenAI specific mappings
+    assert map_text_model_to_image_model("gpt-image-1") == "gpt-image-1"
+    assert map_text_model_to_image_model("gpt-image-1.5") == "gpt-image-1.5"
+
+
+@pytest.mark.asyncio
+async def test_openai_routing():
+    """Verify that gpt- prefixed models route to OpenAI APIs correctly."""
+    from app.services import gemini_client
+    import base64
+
+    # 1. Test Text generation routing
+    fake_openai_client = MagicMock()
+    fake_text_resp = MagicMock()
+    fake_text_resp.choices = [MagicMock()]
+    fake_text_resp.choices[0].message.content = '{"key": "value"}'
+    fake_text_resp.usage = MagicMock(prompt_tokens=50, completion_tokens=30)
+    fake_openai_client.chat.completions.create = AsyncMock(return_value=fake_text_resp)
+
+    # 2. Test Image generation routing
+    fake_img_resp = MagicMock()
+    fake_img_resp.data = [MagicMock()]
+    fake_img_resp.data[0].b64_json = base64.b64encode(b"openai_generated_image").decode("utf-8")
+    fake_openai_client.images.generate = AsyncMock(return_value=fake_img_resp)
+
+    with (
+        patch("app.services.gemini_client._get_openai_client", return_value=fake_openai_client),
+        patch("app.services.token_logger.log_token_usage") as mock_log,
+    ):
+        # Override the text model to gpt-image-1 for routing test
+        with patch("app.config.settings.GEMINI_TEXT_MODEL", "gpt-image-1"):
+            text_resp = await gemini_client.call_text_model({
+                "prompt": "Write JSON screenplay",
+                "script_id": None,
+            })
+            assert text_resp.text == '{"key": "value"}'
+            assert text_resp.usage_metadata.prompt_token_count == 50
+
+        # Trigger image call
+        img_payload = {
+            "prompt": "Draw a happy robot",
+            "script_id": None,
+        }
+        with patch("app.config.settings.GEMINI_IMAGE_MODEL", "gpt-image-1"):
+            img_resp = await gemini_client.call_image_model(img_payload)
+            # Extract bytes
+            extracted_bytes = img_resp.candidates[0].content.parts[0].bytes
+            assert extracted_bytes == b"openai_generated_image"
+
+

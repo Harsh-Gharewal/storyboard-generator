@@ -208,10 +208,16 @@ export default function App() {
               className="model-select"
               disabled={isProcessing || scriptId !== null}
             >
-              <option value="gemini-3.6-flash">Gemini-3.6-flash</option>
-              <option value="gemini-3.5-flash">Gemini-3.5-flash</option>
-              <option value="gemini-2.5-flash">Gemini-2.5-flash</option>
-              <option value="gemini-3.1-pro">Gemini-3.1-pro</option>
+              <optgroup label="Gemini">
+                <option value="gemini-3.6-flash">Gemini-3.6-flash</option>
+                <option value="gemini-3.5-flash">Gemini-3.5-flash</option>
+                <option value="gemini-2.5-flash">Gemini-2.5-flash</option>
+                <option value="gemini-3.1-pro">Gemini-3.1-pro</option>
+              </optgroup>
+              <optgroup label="OpenAI">
+                <option value="gpt-image-1">GPT Image 1</option>
+                <option value="gpt-image-1.5">GPT Image 1.5</option>
+              </optgroup>
             </select>
           </div>
           {scriptId && (

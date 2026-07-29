@@ -1,8 +1,8 @@
 """Script parser service — converts raw script text into structured scenes/shots.
 
-Uses gemini-3.5-flash to parse a screenplay/script into a JSON structure
-of scenes, shots, and characters.  The LLM output is validated via a
-Pydantic response‐schema and persisted as Beanie documents.
+Parses screenplay scripts locally using a fast, deterministic rule-based parser.
+The parsed structure is validated via a Pydantic response-schema and persisted
+as Beanie documents.
 """
 
 import logging
@@ -15,7 +15,7 @@ from app.models.script import Script
 from app.models.scene import Scene
 from app.models.shot import Shot
 from app.models.character import Character
-from app.services import gemini_client, token_logger
+from app.services import token_logger
 
 logger = logging.getLogger(__name__)
 
@@ -608,7 +608,7 @@ async def parse_script(raw_text: str, model: Optional[str] = None) -> dict[str, 
     total_dur = _time.time() - parse_start
     logger.info("=" * 70)
     logger.info("PARSE COMPLETE in %.1fs", total_dur)
-    logger.info("  Gemini API call: %.1fs", t1_dur)
+    logger.info("  Local parsing:   %.1fs", t1_dur)
     logger.info("  Validation:      %.1fs", t2_dur)
     logger.info("  DB persistence:  %.1fs", t4_dur)
     logger.info("=" * 70)

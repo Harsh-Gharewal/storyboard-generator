@@ -5,6 +5,7 @@ class Settings(BaseSettings):
     """Application settings loaded from environment variables / .env file."""
 
     GEMINI_API_KEY: str
+    OPENAI_API_KEY: str | None = None
     MONGODB_URI: str = "mongodb://localhost:27017"
     DATABASE_NAME: str = "storyboard_generator"
     STORAGE_DIR: str = "storage"

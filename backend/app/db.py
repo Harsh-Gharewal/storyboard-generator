@@ -43,7 +43,30 @@ async def init_db() -> None:
         )
         logger.info("Beanie initialized with %d document models", len(ALL_DOCUMENT_MODELS))
     except Exception as e:
-        logger.exception("❌ MongoDB Connection Failed")
+        logger.warning("❌ Configured MongoDB Connection Failed: %s", e)
+        # Try local fallback first
+        try:
+            logger.info("Trying local MongoDB fallback at mongodb://localhost:27017 ...")
+            _client = AsyncIOMotorClient("mongodb://localhost:27017", serverSelectionTimeoutMS=1000)
+            _client.append_metadata = lambda *args, **kwargs: None
+            await _client.admin.command("ping")
+            logger.info("✅ Connected to local MongoDB fallback successfully")
+
+            db = _client[settings.DATABASE_NAME]
+            if not hasattr(db, "client") or not hasattr(db.client, "append_metadata"):
+                mock_client = MagicMock()
+                mock_client.append_metadata = MagicMock()
+                db.client = mock_client
+
+            await init_beanie(
+                database=db,
+                document_models=ALL_DOCUMENT_MODELS,
+            )
+            logger.info("Beanie initialized with local fallback database")
+            return
+        except Exception as local_err:
+            logger.error("❌ Local MongoDB fallback failed: %s", local_err)
+
         logger.warning(
             "Initializing in-memory fallback for testing since MongoDB at %s is inaccessible",
             settings.MONGODB_URI,

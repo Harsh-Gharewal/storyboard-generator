@@ -35,6 +35,61 @@ def _get_client() -> genai.Client:
     return _client
 
 
+# ── OpenAI Mock response types and Client getter ──────────────────────
+
+_openai_client = None
+
+
+def _get_openai_client() -> Any:
+    global _openai_client
+    if _openai_client is None:
+        from openai import AsyncOpenAI
+        import os
+        api_key = settings.OPENAI_API_KEY or os.environ.get("OPENAI_API_KEY")
+        _openai_client = AsyncOpenAI(api_key=api_key)
+    return _openai_client
+
+
+class OpenAIUsageMetadata:
+    def __init__(self, prompt_tokens: int, completion_tokens: int):
+        self.prompt_token_count = prompt_tokens
+        self.candidates_token_count = completion_tokens
+        self.cached_content_token_count = 0
+
+
+class OpenAITextResponse:
+    def __init__(self, text: str, prompt_tokens: int, completion_tokens: int):
+        self.text = text
+        self.usage_metadata = OpenAIUsageMetadata(prompt_tokens, completion_tokens)
+
+
+class OpenAIInlineData:
+    def __init__(self, image_bytes: bytes):
+        self.data = image_bytes
+
+
+class OpenAIPart:
+    def __init__(self, image_bytes: bytes):
+        self.inline_data = OpenAIInlineData(image_bytes)
+        self.bytes = image_bytes
+
+
+class OpenAIContent:
+    def __init__(self, image_bytes: bytes):
+        self.parts = [OpenAIPart(image_bytes)]
+
+
+class OpenAICandidate:
+    def __init__(self, image_bytes: bytes):
+        self.content = OpenAIContent(image_bytes)
+
+
+class OpenAIImageResponse:
+    def __init__(self, image_bytes: bytes):
+        self.candidates = [OpenAICandidate(image_bytes)]
+        self.usage_metadata = OpenAIUsageMetadata(0, 0)
+
+
 def _is_retryable_error(exc: Exception) -> bool:
     """Predicate function: return True for 429 rate limit or 5xx server errors."""
     status_code = getattr(exc, "code", None) or getattr(exc, "status_code", None)
@@ -130,6 +185,50 @@ async def call_text_model(
         except Exception as e:
             logger.warning("Could not load Script %s to get model in call_text_model: %s", script_id, e)
 
+    if primary_model.startswith("gpt"):
+        # Route to OpenAI Async client
+        try:
+            openai_client = _get_openai_client()
+            openai_text_model = "gpt-4o"
+            messages = []
+            if system_instruction is not None:
+                messages.append({"role": "system", "content": system_instruction})
+            messages.append({"role": "user", "content": prompt})
+
+            if response_schema:
+                response = await openai_client.beta.chat.completions.parse(
+                    model=openai_text_model,
+                    messages=messages,
+                    response_format=response_schema
+                )
+                text = response.choices[0].message.content
+                prompt_tokens = response.usage.prompt_tokens
+                completion_tokens = response.usage.completion_tokens
+            else:
+                response = await openai_client.chat.completions.create(
+                    model=openai_text_model,
+                    messages=messages,
+                    response_format={"type": "json_object"} if response_mime_type == "application/json" else None
+                )
+                text = response.choices[0].message.content
+                prompt_tokens = response.usage.prompt_tokens
+                completion_tokens = response.usage.completion_tokens
+
+            openai_resp = OpenAITextResponse(text, prompt_tokens, completion_tokens)
+
+            # Log token usage
+            token_logger.log_token_usage(
+                model=primary_model,
+                prompt_tokens=prompt_tokens,
+                cached_tokens=0,
+                script_id=script_id,
+                call_type="text_generate",
+            )
+            return openai_resp
+        except Exception as e:
+            logger.error("OpenAI text call failed: %s", e)
+            raise e
+
     fallback_model = "gemini-2.5-flash"
     
     try:
@@ -189,7 +288,11 @@ def map_text_model_to_image_model(text_model: Optional[str]) -> str:
     mo_clean = text_model.lower().strip()
 
     # Map specific text models to their matching available image models
-    if "3.6-flash" in mo_clean or "3.5-flash" in mo_clean or "3.1-flash" in mo_clean:
+    if "gpt-image-1.5" in mo_clean:
+        return "gpt-image-1.5"
+    elif "gpt-image-1" in mo_clean:
+        return "gpt-image-1"
+    elif "3.6-flash" in mo_clean or "3.5-flash" in mo_clean or "3.1-flash" in mo_clean:
         return "gemini-3.1-flash-image"
     elif "2.5-flash" in mo_clean:
         return "gemini-2.5-flash-image"
@@ -262,6 +365,53 @@ async def call_image_model(
                 primary_image_model = map_text_model_to_image_model(script.model)
         except Exception as e:
             logger.warning("Could not load Script %s to get model in call_image_model: %s", script_id, e)
+
+    if primary_image_model.startswith("gpt"):
+        # OpenAI Image Generation route
+        import base64
+        openai_client = _get_openai_client()
+        # Use the actual model name selected by the user (gpt-image-1 or gpt-image-1.5)
+        openai_model = primary_image_model
+
+        max_chars = 950 if "gpt-image-1" in openai_model and "1.5" not in openai_model else 3950
+        truncated_prompt = prompt[:max_chars]
+
+        # Omit response_format for gpt-image models
+        kwargs = {
+            "model": openai_model,
+            "prompt": truncated_prompt,
+            "n": 1,
+            "size": "1024x1024",
+        }
+        if not openai_model.startswith("gpt-image"):
+            kwargs["response_format"] = "b64_json"
+
+        try:
+            response = await openai_client.images.generate(**kwargs)
+            first_img = response.data[0]
+            if getattr(first_img, "b64_json", None):
+                b64_data = first_img.b64_json
+                image_bytes = base64.b64decode(b64_data)
+            elif getattr(first_img, "url", None):
+                import urllib.request
+                with urllib.request.urlopen(first_img.url) as url_resp:
+                    image_bytes = url_resp.read()
+            else:
+                raise ValueError("Neither b64_json nor url present in OpenAI image response")
+
+            openai_resp = OpenAIImageResponse(image_bytes)
+
+            token_logger.log_token_usage(
+                model=primary_image_model,
+                prompt_tokens=0,
+                cached_tokens=0,
+                script_id=script_id,
+                call_type="image_generate",
+            )
+            return openai_resp
+        except Exception as e:
+            logger.error("OpenAI image generation failed: %s", e)
+            raise e
 
     response = await client.aio.models.generate_content(
         model=primary_image_model,
