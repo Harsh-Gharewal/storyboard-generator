@@ -1,0 +1,38 @@
+# Python & Virtual Envs
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+venv/
+.venv/
+.pytest_cache/
+*.egg
+
+# Environment
+.env
+.env.local
+
+# Storage (generated images, anchors, logs)
+storage/
+/storage
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Node / Frontend
+node_modules/
+frontend/dist/
+frontend/.vite/
+
+# OS & Logs
+.DS_Store
+Thumbs.db
+*.log
+token_log.jsonl
+token-usage.log
